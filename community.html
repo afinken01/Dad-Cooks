@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dad Cooks — Recipe Community</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #FDFAF4;
+    --bg2: #F4EFE6;
+    --ink: #1E1410;
+    --text-muted: #5C4A38;
+    --border: #DDD3BE;
+    --cream: #FFFFFF;
+    --gold: #1E1410;
+    --gold-bright: #0D0A07;
+  }
+
+  body {
+    font-family: "Libre Baskerville", Georgia, serif;
+    background: var(--bg);
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(30,20,10,0.04) 31px, rgba(30,20,10,0.04) 32px);
+    color: var(--ink);
+    min-height: 100vh;
+    padding-top: 7.5rem;
+  }
+
+  /* ── AUTH BAR ── */
+  .auth-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: #1E1410;
+    border-bottom: 1px solid #0D0A07;
+    padding: 0.85rem 1.5rem 0.8rem;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+  }
+  .auth-bar-row1 { display: flex; align-items: center; gap: 0.75rem; width: 100%; }
+  .auth-bar-row2 { display: flex; align-items: center; gap: 0.4rem; }
+  .auth-bar-logo { font-family: "Playfair Display", serif; font-style: italic; font-size: 0.95rem; color: #FDFAF4; letter-spacing: 0.08em; white-space: nowrap; }
+  .auth-bar-right { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  .auth-bar-user { font-size: 0.72rem; color: rgba(253,250,244,0.6); font-family: "Libre Baskerville", serif; font-style: italic; white-space: nowrap; border-left: 1px solid rgba(253,250,244,0.2); padding-left: 0.75rem; }
+  .btn-auth { font-family: "IM Fell English", serif; font-style: italic; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 0.35rem 1rem; cursor: pointer; transition: all 0.15s; border: 1px solid rgba(253,250,244,0.3); }
+  .btn-auth.primary { background: rgba(253,250,244,0.15); color: #FDFAF4; border-color: rgba(253,250,244,0.4); }
+  .btn-auth.primary:hover { background: rgba(253,250,244,0.25); }
+  .btn-auth.ghost { background: transparent; color: #FDFAF4; }
+  .btn-auth.ghost:hover { background: rgba(253,250,244,0.1); }
+  .btn-auth.danger { background: transparent; color: rgba(253,250,244,0.7); border-color: rgba(253,250,244,0.2); }
+  .btn-auth.danger:hover { background: rgba(253,250,244,0.1); }
+  .nav-link { font-family: "IM Fell English", serif; font-style: italic; font-size: 0.78rem; color: rgba(253,250,244,0.7); text-decoration: none; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.2rem 0.5rem; border-bottom: 1px solid transparent; transition: all 0.15s; }
+  .nav-link:hover { color: #FDFAF4; border-bottom-color: rgba(253,250,244,0.4); }
+  .nav-link.active { color: #FDFAF4; border-bottom-color: rgba(253,250,244,0.7); }
+
+  /* ── AUTH MODAL ── */
+  .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(30,20,10,0.45); display: flex; align-items: center; justify-content: center; padding: 1rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal { background: var(--cream); border: 1px solid var(--border); border-left: 3px solid var(--ink); padding: 2rem; width: 100%; max-width: 400px; box-shadow: 4px 4px 0 rgba(30,20,10,0.08); transform: translateY(12px); transition: transform 0.2s; position: relative; }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal h2 { font-family: "Playfair Display", serif; font-size: 1.4rem; color: var(--ink); margin-bottom: 0.25rem; }
+  .modal-sub { font-size: 0.85rem; font-style: italic; color: var(--text-muted); margin-bottom: 1.5rem; }
+  .modal-field { margin-bottom: 1rem; }
+  .modal-field label { display: block; font-size: 0.68rem; font-family: "IM Fell English", serif; font-style: italic; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.4rem; }
+  .modal-field input { width: 100%; padding: 0.6rem 0.9rem; border: 1px solid var(--border); background: var(--bg); font-family: "Libre Baskerville", serif; font-size: 0.92rem; color: var(--ink); outline: none; }
+  .modal-field input:focus { border-color: var(--ink); }
+  .btn-modal-primary { width: 100%; padding: 0.7rem; background: var(--ink); color: var(--cream); border: 1px solid var(--gold-bright); font-family: "IM Fell English", serif; font-style: italic; font-size: 0.95rem; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: background 0.15s; margin-top: 1.5rem; }
+  .btn-modal-primary:hover { background: var(--gold-bright); }
+  .btn-modal-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+  .modal-toggle { text-align: center; font-size: 0.82rem; font-style: italic; color: var(--text-muted); margin-top: 1rem; }
+  .modal-toggle a { color: var(--ink); text-decoration: underline; cursor: pointer; }
+  .modal-error { background: var(--bg2); border: 1px solid var(--border); padding: 0.6rem 0.8rem; font-size: 0.82rem; font-style: italic; color: var(--ink); margin-top: 0.75rem; display: none; }
+  .modal-error.show { display: block; }
+  .modal-close { float: right; background: none; border: none; font-size: 1.2rem; color: var(--text-muted); cursor: pointer; }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 300; background: var(--ink); color: var(--cream); padding: 0.75rem 1.25rem; font-size: 0.85rem; font-family: "Libre Baskerville", serif; font-style: italic; box-shadow: 2px 2px 0 rgba(30,20,10,0.15); transform: translateY(10px); opacity: 0; transition: all 0.25s; pointer-events: none; border: 1px solid rgba(30,20,10,0.3); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { background: #3a1010; }
+
+  /* ── COMMUNITY FEED ── */
+  .page-wrap { max-width: 680px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+  .page-header { text-align: center; margin-bottom: 2.5rem; }
+  .page-header h1 { font-family: "Playfair Display", serif; font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 400; color: var(--ink); margin-bottom: 0.5rem; }
+  .page-header p { font-size: 0.94rem; font-style: italic; color: var(--text-muted); line-height: 1.8; }
+
+  /* Composer */
+  .composer { background: var(--cream); border: 1px solid var(--border); border-left: 3px solid var(--ink); padding: 1.25rem 1.5rem; margin-bottom: 1.75rem; }
+  .composer-tabs { display: flex; gap: 0; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+  .composer-tab { font-family: "IM Fell English", serif; font-style: italic; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 1rem 0.5rem; cursor: pointer; color: var(--text-muted); border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+  .composer-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+  .composer textarea { width: 100%; border: 1px solid var(--border); background: var(--bg); padding: 0.75rem 1rem; font-family: "Libre Baskerville", serif; font-size: 0.9rem; font-style: italic; color: var(--ink); resize: none; outline: none; min-height: 90px; line-height: 1.7; }
+  .composer textarea:focus { border-color: var(--ink); }
+  .composer textarea::placeholder { color: #BFAE9A; }
+  .composer-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem; }
+  .composer-field input, .composer-field select, .composer-field textarea {
+    width: 100%; border: 1px solid var(--border); background: var(--bg);
+    padding: 0.55rem 0.8rem; font-family: "Libre Baskerville", serif;
+    font-size: 0.85rem; color: var(--ink); outline: none;
+  }
+  .composer-field input:focus, .composer-field select:focus, .composer-field textarea:focus { border-color: var(--ink); }
+  .composer-field label { display: block; font-family: "IM Fell English", serif; font-style: italic; font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 0.35rem; }
+  .composer-field.full { grid-column: 1 / -1; }
+  .composer-footer { display: flex; justify-content: flex-end; margin-top: 0.9rem; }
+  .btn-post { background: var(--ink); color: var(--cream); border: none; padding: 0.55rem 1.4rem; font-family: "IM Fell English", serif; font-style: italic; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: background 0.15s; }
+  .btn-post:hover { background: var(--gold-bright); }
+  .btn-post:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Feed */
+  .feed { display: flex; flex-direction: column; gap: 1.25rem; }
+  .post { background: var(--cream); border: 1px solid var(--border); border-left: 3px solid var(--ink); padding: 1.25rem 1.5rem; position: relative; animation: fadeUp 0.4s ease; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:translateY(0) } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .post-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; gap: 0.75rem; }
+  .post-avatar { width: 34px; height: 34px; background: var(--ink); color: var(--cream); border-radius: 0; display: flex; align-items: center; justify-content: center; font-family: "Playfair Display", serif; font-size: 0.85rem; font-style: italic; flex-shrink: 0; }
+  .post-meta { flex: 1; }
+  .post-author { font-family: "Playfair Display", serif; font-size: 0.9rem; color: var(--ink); }
+  .post-time { font-size: 0.72rem; font-style: italic; color: var(--text-muted); margin-top: 0.1rem; font-family: "Libre Baskerville", serif; }
+  .post-type-badge { font-family: "IM Fell English", serif; font-style: italic; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.15rem 0.6rem; border: 1px solid var(--border); color: var(--text-muted); background: var(--bg); white-space: nowrap; flex-shrink: 0; }
+  .post-type-badge.recipe { border-color: var(--ink); color: var(--ink); }
+  .post-body { font-size: 0.92rem; line-height: 1.8; color: var(--ink); margin-bottom: 0.9rem; white-space: pre-wrap; }
+  .post-recipe-title { font-family: "Playfair Display", serif; font-size: 1.1rem; color: var(--ink); margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  .post-recipe-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+  .post-recipe-meta span { font-family: "Libre Baskerville", serif; font-size: 0.72rem; font-style: italic; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); padding: 0.1rem 0.5rem; }
+  .post-actions { display: flex; gap: 1rem; align-items: center; padding-top: 0.75rem; border-top: 1px dashed var(--border); }
+  .post-action { background: none; border: none; font-family: "IM Fell English", serif; font-style: italic; font-size: 0.75rem; color: var(--text-muted); cursor: pointer; letter-spacing: 0.05em; text-transform: uppercase; padding: 0; transition: color 0.15s; display: flex; align-items: center; gap: 0.3rem; }
+  .post-action:hover { color: var(--ink); }
+  .post-action.liked { color: var(--ink); font-weight: 700; }
+
+  /* Comments */
+  .comments-section { margin-top: 0.9rem; border-top: 1px dashed var(--border); padding-top: 0.75rem; display: none; }
+  .comments-section.open { display: block; }
+  .comment { display: flex; gap: 0.75rem; margin-bottom: 0.75rem; align-items: flex-start; }
+  .comment-avatar { width: 24px; height: 24px; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: "Playfair Display", serif; font-size: 0.65rem; color: var(--ink); flex-shrink: 0; }
+  .comment-body { flex: 1; }
+  .comment-author { font-family: "Playfair Display", serif; font-size: 0.78rem; color: var(--ink); margin-bottom: 0.15rem; }
+  .comment-text { font-size: 0.82rem; color: var(--ink); line-height: 1.6; font-family: "Libre Baskerville", serif; }
+  .comment-input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .comment-input { flex: 1; border: 1px solid var(--border); background: var(--bg); padding: 0.45rem 0.75rem; font-family: "Libre Baskerville", serif; font-size: 0.85rem; font-style: italic; color: var(--ink); outline: none; }
+  .comment-input:focus { border-color: var(--ink); }
+  .comment-input::placeholder { color: #BFAE9A; }
+  .btn-comment { background: var(--ink); color: var(--cream); border: none; padding: 0.45rem 0.9rem; font-family: "IM Fell English", serif; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .btn-comment:hover { background: var(--gold-bright); }
+
+  .empty-feed { text-align: center; padding: 4rem 2rem; color: var(--text-muted); font-style: italic; font-family: "Libre Baskerville", serif; border: 1px solid var(--border); background: var(--cream); }
+  .feed-loading { text-align: center; padding: 3rem; color: var(--text-muted); font-style: italic; }
+
+  .divider { height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); margin: 1.5rem 0; }
+
+  @media (max-width: 520px) {
+    .composer-fields { grid-template-columns: 1fr; }
+    .composer-field.full { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- AUTH BAR -->
+<div class="auth-bar">
+  <div class="auth-bar-row1">
+    <div class="auth-bar-logo" style="display:flex;align-items:center;gap:0.5rem">
+      <img src="data:image/jpeg;base64,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S6fcgYWVVyNwwSrJkblJGQcEfBP/AA4x/wCq2f8Alqf/AHbX6qUUAfM37Ff7I/ib9kTRdW8O3HxO/wCE38KXb/aLXS5tENm1jcEje8cn2mT5HH3k243AMCCW3ew/F/4KeCvjz4Ql8M+OtAttf0l23ok2VkgkwQJIpFIaNwCfmUg4JHQkV3FFAH5g/En/AIIi6JfX0tz4E+JF5pNsxJXT9dsFutuegE0bIQB05Qn39fMD/wAESPiV9qKj4geFTb78CQx3O/bnrt8vGcds/j3r9jaKAPzC+Gv/AARG0Swv4brx58R7vWLZWVn07Q7AWobHJBmkdyQenCKfQ+n6D/CL4MeC/gT4Pg8MeBtAtdA0iM72SAEyTyYAMkshy0jkADcxJwAOgArtqKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiisLxh458P8Aw/0eTVfEesWmjWCdZ7uUICfQZ5Y+wyaAN2q99qFrpdpJdXtzDaW0Q3PNO4REHqSeBXw98Yf+Cm2laaZrD4daK+rzglf7U1MGOAe6Rj5m/HFfEvxM+Ofjv4wXpn8V+JLvUowxKWat5dtH/uxL8v4nJ96AP0v+J37f/wAKvh80lvYajL4t1BSR5WjrviB95Thce67q+YvGv/BTzxzqlzMvhnw9pWh2uSI3vN1zLj1PIXP0r4yApQKAPYNe/a++MniKd5Lj4gapbKxz5Nj5cCL9Nq5/Wubk+PnxNmbc3xB8SlvUanKP5GuExS0Aek6f+0r8V9LYNb/ETxCpH/PS8Mn/AKGDXqHg3/goh8XfCqJFfXmn+JoVOT/aVsFlPtvTH8q+ZqCM0Afpb8MP+Cmfg7xC9vaeMtHu/C90/D3cH+kWoPqcfOB+Br608JeNNB8eaPFqvh7V7TWdPlHyz2codfoccg+xwa/BzpXT/D74neKfhXrcereFdautHvFPzeS/7uQf3XQ/Kw+ooA/daivjn9nD/goToXxCntPD/jyOHw3r8mEi1BTiyuW4GCSf3bE9jx719iI6uoZSGUjIIOQRQA6iuQ+J3xX8MfB/w1LrninU4tOs1yI1JzJM2PuRr1Y/Svzc/aA/4KA+MvibLc6V4QeXwh4cJKeZC3+m3Kf7Tj7gPovPvQB97/F39qf4cfBVZYtf1+KXVEXcNKsP39yfTKjhf+BEV8ifED/gqLrN3M0XgvwnbWMHa51eUySH3CJgD8TXw1LK88rSyu0srnLO7FmY+pJ60ygD3DxV+2t8Z/Fly8knjW50mNulvpMMcCD/AMdLfrXHT/tBfFC6fdJ8QvEjN7ajIv8AIiuAooA9Gsv2jvipp7BoPiH4iUj+9fM//oWa9D8H/t9/GXwmNs2vW/iGL+7q1qrt+DJtP86+dqKAP0J+HX/BUaymRIPHHhKW0fIBvNGl81MepjfB/I19ZfDL9oD4f/F+EHwt4msr+42hmsmfyrlPrG2G/EAj3r8RKltbuexuI7i2mkt7iM7klicq6n1BHINAH780V+Tvwg/4KA/En4beTaa1cL4z0hML5WonFwij+7MOTx/eB+tfdPwY/bR+G3xkENpBqg0HXHIX+zNWYRO7HtG33X/A59qAPeaKTNLQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUVxfxK+Mng34RaYb7xXr1ppUZ+5E77ppD6Kg+Y/gKAO0rmfHfxK8L/AAz0l9S8T65Z6NaqpYG5lCs+P7q9WP0FfB/xn/4Kaanqazaf8NtJ/suEkr/bGqIHmI6Axxcqvrls/Svi/wAWeMdd8d6xJqviLV7zWtQk+9cXkpkb6DPQewoA+4fjX/wU0kk+0ab8M9JCj7o1vVUz+McP9WP4Gvijxx8Q/EvxK1iTVPFGt3mt3rsW33UpKpnsi/dUeygCudooAKXFApR0oAAMUtFFABRRRQAUUUUAIRTaeaZQAV9T/s8ft6+Jfg14ZuvD+uWsvivTIoT/AGZ5s2JraTsjOeWi9uo6Dg8fLFFAHZ/Fb4veKPjT4qn17xRftd3LkiKBTiG2Tska9AB+Z6muMpR1pcZoAbRSkc0lAC8Ud6SlFABjijFOHSgjNADKKdjpSUAJQOCCOCOQR2pT1pKAPfvgn+2t8Rvg00Fn/aB8S6Ah50zVnMhVfSOX7yfTlfavvr4J/tw/Dn4wLBZzX3/CMa84wdO1VggZvRJPut+h9q/IegjNAH7+qwZQykEEZBHelr8dfgv+2X8SPguYrW11Q69oaYB0rVmMqKo7Rv8Aej/A49jX3j8F/wBvr4dfFNoLHVJ28H65IwQWupsPJkY/3Jh8v4Ng+1AH0zRUcE8VzCksMiSxOMq6MGVh6gjrUlABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFADQ6lygYFhyVzyKdXyn+3VZeL/AARoelfFHwNq9zpepaG/kX8cJzHNbuQAXQ8Nhto5HQmvPfgz/wAFM9NvY4rH4k6Q+nTBQP7X0pDJE57l4vvL/wAB3fSgD7uorl/BPxP8J/EeyS78M+IdP1qJlDYtLhWdf95eqn2IrqKACiiigAooooAKKKKACiuU8afFbwd8O7Z5/EviXTNGRAWK3VyqucdgudxPsBmvlv4l/wDBTbwXoSPB4L0a98T3WSBc3QNpbD3GRvb6bV+tAH2f0ryH4t/tWfDX4MxSprviGCfUkGV0vTz59yx7DavC/ViBX5pfFb9s/wCKXxY8+C611tE0qUn/AIl+j5gTb6Fwd7fia8NdjJIzuxkkc5Z3OWY+pJ60AfYvxh/4KTeMfFwubDwRYx+EtNY7VvZcTXrr9fupn2BI9a+Sde8Qan4p1SbUtY1C51TUJmLyXN3KZHYnryaz6KACiiigAoopwFADacOlLiigAooooAKKKKACkJpaQjNACUlOxzQAKAExS7aWigBAMCloooATFGKWigBMUY5paKACiiigApp60ppCMUAJRRRQAUUUUAFBGevNFLQB6r8I/wBp74i/BaaJPD/iCaTTVbc2l337+2f1G08r9VINfb/wi/4KU+DfFH2ey8cWMvhLUWwpvI8z2TH1yPmT8QQPWvzKooA/ejw14t0XxlpkWoaFqtpq9lIMrPZzLIp/EGtavwh8GfEDxL8O9SS/8M65faJdK27dZzFFb/eXofxFfVvww/4KZ+MfDqRWvjPRrXxRbAgG7tj9muQv5FGP4DPrQB+mNFeCfDb9t/4SfEpkgi8RDQb9gP8ARNcT7Mc+gckox9g2a9zsdQtdUtluLO5hu4HGVlgcOp+hFAFiikpaACiiigAooooAKKgvb+2022e4u7iK1t0GWlmcIqj3J4r50+Lv7evwy+GSXFrp1+fF+tIp22mkkNCG7B5/uj3xuI9KAPpB3WNSzMFUDJJOABQjrIgZGDKRkMDkEV+afhb48fEr9s/4xaP4Sa5Hh/wk0wub7TtMZkH2ZDlxJJ95iQMY4BPav0qghS3hSKNQkaKFVVGAAKAJKKKKACiiigDN8R+H7HxXoOoaNqcC3On38D208TDIZGUg/oa/Fr49fBvUfgZ8S9T8M34L26sZbK52kLPAT8pHuOhHav23rw79rH9m+z/aF8BG3h2W/ifTQ02l3THA3Y5ic/3G/Q4PagD8f9K1W90HUI7/AEy8uNOvY/u3FpK0Ug/4EpBxXungX9uj4weBoVg/4SMa7bL0j1eFZiB6B+G/WvD9e0LUPC+t3ukataSWOpWUrQ3FvMu1o3HUEVRoA+7PDP8AwVN1WCJU8Q+BLW6kAwZdOvWiB/4C6t/Ou+0z/gqL4GnUf2h4U16zbuITFMB+JZa/NWigD9Ppf+CnPwvVMpo3iZ2/um1hH/tWue1X/gqV4VhB/s7wVq90e32i5jh/kGr84qKAPtbxZ/wVF8W326Pw94R0zSkPSW9me4kH4DaP0rw/xz+2P8XvHxZLzxhc6fbNwbbSlW2Q/Ur83614wRmkIxQBJfXU+p3sl5ezy3l3IcvcXEhkkb6sxJNRUUUAFFFFABS4oFGeRQAlFKeaMUAJTx0ptOoAKKQ0CgBaTHNLRQAUUUlAC0UUUAIaM9KKB0oAWikzQTzQAZpM0lFAC5p3WmUo60AOooooAKKKKACiiigAxSYFLRQAhWjFLRQAgFLiiigBCKbTqMUANop2KNtADSAwwRkV03g34leLfh86t4Z8Sanoe07glncsqZ/3M7f0rm9tLQB9P+Ef+Civxc8NxxR38+meI4kGP9Ottjt9XQivXdC/4KoERINZ+H5Mv8T2OoYX8AyE/rXwHRQB+lll/wAFRPAcmPtfhbX7c/8ATPypP/ZhUl1/wVD+Hsa/6P4a8QzN6OkKD895r8ziM02gD9Cta/4KoWSRsNJ8AXDv/C93qCgfiFT+teSeLf8AgpN8U9eWWPSoNI8OxsCAbeAzOB/vOTz+FfKFOAoA63xr8WfGnxIdm8T+J9T1pWOTFc3B8r/v2ML+lcoFVcAAAUlfXn7Cn7KsnxP1+Dxz4ntCPCmnShrO3lXi/nU+h6xqevqRjpQB9K/sDfs9v8Kfh83ibWrRYvEviBFkww+e3tuqRn0J4Yjsa+qqRVCgADAHAApaACiiigAooooAKKKKAPmn9rb9j3Tfj1pza3ovlaZ42tY8RXBGI7xQOIpPT2bt9K/K/wAU+FtW8Ea/eaJrunzaZqto2ya2nXawPqPUHsRwa/eavIP2gf2Y/CP7QmimLWIPsOtQoRZ6zbKBNCccBv76Z6qfwIPNAH4x9qK9W+Of7NPjX4A6q0Wu2LXWkM5W31m0Utbyjtk/wH2avKsZoASilIxSUAFIaWigBpFGKdRQA3bRinUHpQA00nel6mnAYoATFLijGaDxQAUUUUAFHSiigAoopQKAEopccUh60AFFFIaAAnFJmjGaMUAKMYrT0HwtrXiuW5j0XSb3VntYjPOtnA0pijHVmwOBXv8A+z3+w140+M0ltqmrJJ4T8LNhjeXcR8+4XP8AyyjODz/ebA+tfph8Jfgr4S+CfhtdG8LaYlpC3M9xJ889y396R+rH26DsBQB+HYOaK/U/9pD9gjw18Vmu9d8JGHwv4pkJkkVExaXbf7aD7jH+8PxB61+b/wASvhN4s+EGuPpPi3Rp9Kuc/u5GXdDMPWNxww/WgDkcZoxTqKACiiigAooooAKKKMZoABS5pMUd6ACijHFLigBKKMUUAHeijFLigBKKdikA5oATFFOxTT1oAKKKKACiiigBMUvQZq/oOgal4o1e20vR7C41PUblgkVraxl3c/Qfzr7+/Zm/4J4RaTNaeJPigIru5XbLB4ejOYo2ByDO38f+4OPXPSgDxr9kf9i3U/jNd23ibxVDNpfglGDxqRsl1H2TuE9W79vWv1G0bRrHw9pVrpum2sVlYWsaxQ28KhUjQDAAAqzb28VrBHDDGsUMahUjQYVQOgA7VJQAUUUUAFFFFABRRRQAUUUUAFFFFAFLV9Hsdf0240/UrOC/sbhCktvcRh43U9QQeDXxd8cf+CbGja/JPqvw4v10G9Yl20i8Je1b2jblo/ocj6V9vUUAfhv8Sfg/4y+Eeomy8V6Bd6U2TsnZN0EmO6yD5SPxrjK/e7V9F0/X7GWy1Oyt9QtJQVeC5jEiMD6g18z/ABO/4J3fDDxwpm0OK58GX2SQ2mndA31ibIx/ulaAPypor6t8f/8ABN74n+FZLibQZtO8W2SZKfZ5Ps9wR7xucZ9gxr538W/DPxb4CmMXiLw1qmjNnGbu1dF/PGKAOaopFdWzgg49KXNABQeaBRQAUoGaSlBoAUDFI3WlJ4pO9ACUUUUAFFAoxQAUucUYprOqfeIGfWgBaK2/DXgbxH4yuBBoWg6jq8p6LZ2ryfqBivb/AAR+wL8YfGUayzaHB4ct2/5aaxcCJh/2zXc4/EUAfOtIql5FRFZ5GOFRRlifYDrX6JeBf+CXGjWvkTeMPGF3qTjDSWmkwLBGfVfMbcxHuApr6d+HP7NXw1+FLCXw54SsLW727TeTIZpyP998mgD8xvhF+xd8Tvi41vcQ6OdA0aUbv7S1gGJSvqqY3N+Ar70+Bv7CXw/+ETW+pahD/wAJb4ijAb7bqKDyYm9Youg+rZPuK+kQMDA6UtACKoUAAAAcADtS0UUgErE8YeCNA8f6LLpPiPSbTWdNlHzW93EHX6juD7jmtyigD4K+NP8AwTMt7qSbUfhpq4sycsdG1ViyZ9I5uo+jA/Wviv4ifBvxr8J7w2/ivw5faVyds7xloXx3WRcqR+NfuTVbUNNtNWtXtr22hvLZxhoZ4w6N9QeKYH4GBgwyDkUtfrV8S/2AvhP8QFmms9Lm8J6jI283Oiv5ak98xMCnPsAfevmjx7/wTC8YaVK8vhLxJp+vW+MiC+Q2kw9sjcrfXK/SgD4spQK9S8Y/svfFTwFJN/a3gjVBDF965tIvtEOPUPHkV5hcxvZymK4je3lBwUmUow/A0ANx0pOgozSUAOHU0tMzRmgB1FNpc0AL6UtN9KWgBaKQ0mKAHUU0ikoAcTTScmin2sEt9MsVtFJcyscCOFC7E/QUAMor2PwB+yF8WviNJGdP8IXllaOM/bNUxaxY9QXwT+ANfTnw2/4JeLthufHniss24M2n6JHgEehmcZ/JR7GgD4Dt4JbudIIIpJ53OEiiQszH2A5NfT/wU/4J+/ED4lvb33iJP+EM0NiGL3ibrqRf9iLt9WI/Gv0T+Gf7PHw8+EKk+F/DFlY3JADXjr5s7Y9ZHy3616NQB5l8GP2dfBHwJ0sW/hnSlW9dds+p3OJLqf13P2H+yMD2r02iigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACoL2xttSt3t7u3iuoH+9FMgdT9QeKnooA8l8a/spfCjx/ubVvBWmidv+Xi0j+zyD6FMV414o/4Jk/DTVtz6Rquu6C/ZY7hZ0/ESKT+tfX9FAH54a/8A8EstWjV20Tx5ZzH+GO/sGTP1ZXP8q871b/gm18XtOJ+zN4f1RR0+zXzIx/CRFH61+qdFAH5BX37CPxssAxPg/wC0KO8F/bv+m/Ncxe/spfGCwJEnw7158f8APC1Mv/oOa/aSigD8SJP2dPirESG+G/ikf9wmb/4mlT9nL4qyn5fhv4pP/cJmH/stfttRQB+L1j+yb8YdQIEfw81yPP8Az3t/K/8AQiK6fT/2DfjXfgH/AIRJbYHvcX9uuPw35r9eqKAPyz0f/gmp8WdQdftl14e0uM9TLePIw/BEI/WvRND/AOCWF44Q614/hX+8lhp5JH0Z3/pX6EUUAfJHhn/gmh8L9IVTqt9rmvSDr51ysK/lGo/nXrvg79lD4TeBdraZ4I0wzL/y3u4/tEh+pfNetUUAVdO0uz0i2FvY2kFlAOkVvGsaj8AMVaoooAKKKKACiiigAooooAKKKKACiiigAooooAK5nxJ8M/CXjBZBrfhrStTMgwzXNojsf+BYzXTUUAfOnij9gP4MeJZZJU8OS6PK+edMu5IVB/3ckfpXk/iH/glp4bmd30LxrqtlnpHfQRzqv4rsP619x0UAfmp4g/4JeeOLQsdG8W6HqK9hdxS2x/QPXDal/wAE7/jPpxbytL0vUQOhtNSTn/vvbX6yUUAfjpqf7FHxp0oEyeBruYD/AJ9Z4Zv0VzXPXP7MHxctDh/hx4kb/rnp8j/+gg1+1lFAH4jn9nn4pKcH4ceKQf8AsET/APxNTwfs2/Fe5YBPhv4n5/vaXKo/Va/bGigD8a9M/Y7+MuqkCLwDqcWe91sh/wDQ2FdPp3/BP341X5Afw9Z2QP8AFc6jDgf98sTX620UAfmRoH/BMX4jXzqdW8QeH9KjPXyXluHH4bVH616T4e/4JY6TG6tr3ju+uFHVNNs0hz+Ll6+7qKAPmzwt/wAE+Pg34ceKS40S61yVMZOpXjurH3UED9K9s8L/AAx8JeCY400Hw3pelCMYRrW1RWH/AALGf1rp6KACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//2Q==" style="height:36px;width:auto;filter:invert(1)" alt="Dad Cooks logo" />
+    </div>
+    <a href="meal-planner-cream-ink.html" class="nav-link">← Meal Planner</a>
+    <a href="community.html" class="nav-link active">Recipe Community</a>
+    <span class="auth-bar-user" id="auth-bar-email" style="display:none"></span>
+    <div id="auth-logged-out" class="auth-bar-right">
+      <button class="btn-auth ghost" onclick="openAuth('login')">Sign In</button>
+      <button class="btn-auth primary" onclick="openAuth('signup')">Sign Up</button>
+    </div>
+    <button id="auth-signout-btn" class="btn-auth danger" onclick="signOut()" style="display:none;margin-left:auto">Sign Out</button>
+  </div>
+</div>
+
+<!-- AUTH MODAL -->
+<div class="modal-overlay" id="auth-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAuth()">×</button>
+    <h2 id="modal-title">Sign In</h2>
+    <p class="modal-sub" id="modal-sub">Welcome back to Dad Cooks.</p>
+    <div class="modal-field"><label>Email</label><input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" /></div>
+    <div class="modal-field"><label>Password</label><input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" /></div>
+    <div class="modal-error" id="auth-error"></div>
+    <button class="btn-modal-primary" id="auth-submit-btn" onclick="submitAuth()">Sign In</button>
+    <div class="modal-toggle"><span id="modal-toggle-text">Don't have an account?</span> <a onclick="toggleAuthMode()" id="modal-toggle-link">Sign Up</a></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="page-wrap">
+  <div class="page-header">
+    <h1>Recipe Community</h1>
+    <p>Share recipes, tips, and kitchen wins with other dads. Post a recipe or a quick cooking tip — whatever's helping you pull it off this week.</p>
+  </div>
+
+  <!-- COMPOSER -->
+  <div class="composer" id="composer">
+    <div class="composer-tabs">
+      <button class="composer-tab active" onclick="switchTab('tip')">💬 Tip or Note</button>
+      <button class="composer-tab" onclick="switchTab('recipe')">🍽 Recipe</button>
+      <button class="composer-tab" onclick="switchTab('scan')">📷 Scan</button>
+    </div>
+    <!-- Tip panel -->
+    <div id="tab-tip">
+      <textarea id="tip-text" placeholder="Share a cooking tip, a weeknight win, a question for the community…" maxlength="1000"></textarea>
+    </div>
+    <!-- Recipe panel -->
+    <div id="tab-recipe" style="display:none">
+      <div class="composer-fields">
+        <div class="composer-field">
+          <label>Recipe name</label>
+          <input type="text" id="rec-title" placeholder="e.g. Tuesday Night Chili" maxlength="100" />
+        </div>
+        <div class="composer-field">
+          <label>Serves</label>
+          <input type="text" id="rec-serves" placeholder="e.g. 4" maxlength="20" />
+        </div>
+        <div class="composer-field full">
+          <label>Ingredients (one per line)</label>
+          <textarea id="rec-ingredients" style="min-height:80px" placeholder="2 cups flour&#10;1 tsp salt&#10;…"></textarea>
+        </div>
+        <div class="composer-field full">
+          <label>Instructions</label>
+          <textarea id="rec-instructions" style="min-height:80px" placeholder="1. Preheat oven…&#10;2. Mix together…"></textarea>
+        </div>
+        <div class="composer-field">
+          <label>Cuisine (optional)</label>
+          <input type="text" id="rec-cuisine" placeholder="e.g. Italian" maxlength="50" />
+        </div>
+        <div class="composer-field">
+          <label>Notes (optional)</label>
+          <input type="text" id="rec-notes" placeholder="e.g. Kids love this" maxlength="200" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Scan panel -->
+    <div id="tab-scan" style="display:none">
+      <div id="com-scan-upload-zone" style="border:2px dashed var(--border);background:var(--bg);padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;position:relative;margin-bottom:1rem"
+        ondragover="event.preventDefault();this.style.borderColor='var(--ink)';this.style.background='var(--bg2)'"
+        ondragleave="this.style.borderColor='';this.style.background=''"
+        ondrop="comHandleScanDrop(event)">
+        <input type="file" id="com-scan-file-input" accept="image/*" capture="environment" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="comHandleScanFile(this.files[0])">
+        <div style="font-size:2rem;margin-bottom:0.5rem">📷</div>
+        <div style="font-family:'Playfair Display',serif;font-size:1rem;color:var(--ink);margin-bottom:0.3rem">Drop a photo here, or tap to upload</div>
+        <div style="font-size:0.8rem;font-style:italic;color:var(--text-muted)">JPG, PNG, WEBP — up to 10 MB</div>
+      </div>
+      <div id="com-scan-preview-wrap" style="display:none;margin-bottom:1rem;position:relative">
+        <img id="com-scan-preview-img" style="width:100%;max-height:180px;object-fit:cover;border:1px solid var(--border);display:block" />
+        <button onclick="comClearScanFile()" style="position:absolute;top:0.4rem;right:0.4rem;background:rgba(30,20,10,0.7);border:none;color:#fff;width:26px;height:26px;cursor:pointer;font-size:1rem;line-height:1">×</button>
+      </div>
+      <div id="com-scan-status" style="display:none;text-align:center;padding:1.5rem 0">
+        <div style="font-size:2rem;display:block;margin-bottom:0.75rem;animation:spin 1.5s linear infinite">🔥</div>
+        <div style="font-family:'Playfair Display',serif;font-style:italic;color:var(--ink)">Reading your recipe…</div>
+        <div style="font-size:0.8rem;font-style:italic;color:var(--text-muted);margin-top:0.35rem">This takes about 10–15 seconds</div>
+      </div>
+      <div id="com-scan-result" style="display:none">
+        <div style="font-family:'IM Fell English',serif;font-style:italic;font-size:0.72rem;color:var(--text-muted);letter-spacing:0.15em;text-transform:uppercase;margin-bottom:0.75rem;padding-bottom:0.4rem;border-bottom:1px solid var(--border)">Looks good? Edit before posting</div>
+        <div class="composer-fields">
+          <div class="composer-field">
+            <label>Recipe name</label>
+            <input type="text" id="com-scan-title" placeholder="Recipe title" />
+          </div>
+          <div class="composer-field">
+            <label>Serves</label>
+            <input type="text" id="com-scan-serves" placeholder="e.g. 4" />
+          </div>
+          <div class="composer-field">
+            <label>Cuisine</label>
+            <input type="text" id="com-scan-cuisine" placeholder="e.g. Italian" />
+          </div>
+          <div class="composer-field">
+            <label>Meal type</label>
+            <select id="com-scan-meal-type">
+              <option value="main course">Main Course</option>
+              <option value="breakfast">Breakfast</option>
+              <option value="dessert">Dessert</option>
+              <option value="salad">Salad</option>
+              <option value="side dish">Side Dish</option>
+              <option value="snack">Snack</option>
+            </select>
+          </div>
+          <div class="composer-field full">
+            <label>Ingredients (one per line)</label>
+            <textarea id="com-scan-ingredients" style="min-height:80px"></textarea>
+          </div>
+          <div class="composer-field full">
+            <label>Instructions</label>
+            <textarea id="com-scan-instructions" style="min-height:80px"></textarea>
+          </div>
+          <div class="composer-field full">
+            <label>Add a note (optional)</label>
+            <input type="text" id="com-scan-note" placeholder="e.g. Kids love this one" />
+          </div>
+        </div>
+      </div>
+      <div id="com-scan-parse-error" style="display:none;background:var(--bg2);border:1px solid var(--border);padding:0.6rem 0.8rem;font-size:0.82rem;font-style:italic;color:var(--ink);margin-top:0.5rem">
+        Could not read the recipe. Please try a clearer photo.
+      </div>
+    </div>
+    <div class="composer-footer">
+      <button class="btn-post" id="post-btn" onclick="submitPost()">Post</button>
+    </div>
+  </div>
+
+  <div id="feed-container">
+    <div class="feed-loading">Loading the community…</div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL  = 'https://kbudeyikkcwypkpbbbjk.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtidWRleWlra2N3eXBrcGJiYmprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MzgyMDksImV4cCI6MjA5MDIxNDIwOX0.N5JxDx2oZibXPBqUfMd896-kU5FVc_3cT9LT4Jw_kwc';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  let currentUser = null;
+  let currentTab = 'tip';
+  let posts = [];
+
+  // ── AUTH ──────────────────────────────────────────────
+  let authMode = 'login';
+
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => { t.className = 'toast'; }, 3000);
+  }
+
+  function openAuth(mode) {
+    authMode = mode;
+    updateAuthModal();
+    document.getElementById('auth-modal').classList.add('open');
+    setTimeout(() => document.getElementById('auth-email').focus(), 200);
+  }
+  function closeAuth() {
+    document.getElementById('auth-modal').classList.remove('open');
+    document.getElementById('auth-error').classList.remove('show');
+    document.getElementById('auth-email').value = '';
+    document.getElementById('auth-password').value = '';
+  }
+  function toggleAuthMode() {
+    authMode = authMode === 'login' ? 'signup' : 'login';
+    updateAuthModal();
+  }
+  function updateAuthModal() {
+    const isLogin = authMode === 'login';
+    document.getElementById('modal-title').textContent = isLogin ? 'Sign In' : 'Create Account';
+    document.getElementById('modal-sub').textContent = isLogin ? 'Welcome back to Dad Cooks.' : 'Join the Dad Cooks community.';
+    document.getElementById('auth-submit-btn').textContent = isLogin ? 'Sign In' : 'Create Account';
+    document.getElementById('modal-toggle-text').textContent = isLogin ? "Don't have an account?" : 'Already have an account?';
+    document.getElementById('modal-toggle-link').textContent = isLogin ? 'Sign Up' : 'Sign In';
+    document.getElementById('auth-error').classList.remove('show');
+  }
+  async function submitAuth() {
+    const email    = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const btn      = document.getElementById('auth-submit-btn');
+    if (!email || !password) { showAuthError('Please fill in all fields.'); return; }
+    btn.disabled = true; btn.textContent = 'Please wait…';
+    try {
+      let result;
+      if (authMode === 'signup') {
+        result = await sb.auth.signUp({ email, password });
+        if (result.error) throw result.error;
+        if (result.data.user && !result.data.session) {
+          showAuthError('Check your email to confirm your account, then sign in.');
+          btn.disabled = false; updateAuthModal(); return;
+        }
+      } else {
+        result = await sb.auth.signInWithPassword({ email, password });
+        if (result.error) throw result.error;
+      }
+      closeAuth();
+    } catch (err) {
+      showAuthError(err.message || 'Something went wrong.');
+      btn.disabled = false; updateAuthModal();
+    }
+  }
+  function showAuthError(msg) {
+    const el = document.getElementById('auth-error');
+    el.textContent = msg; el.classList.add('show');
+  }
+  async function signOut() {
+    await sb.auth.signOut();
+    currentUser = null;
+    updateAuthBar(null);
+    showToast('Signed out.');
+  }
+  sb.auth.onAuthStateChange((_event, session) => {
+    currentUser = session?.user ?? null;
+    updateAuthBar(currentUser);
+  });
+  function updateAuthBar(user) {
+    const loggedOut   = document.getElementById('auth-logged-out');
+    const emailEl     = document.getElementById('auth-bar-email');
+    const signoutBtn  = document.getElementById('auth-signout-btn');
+    if (user) {
+      loggedOut.style.display = 'none';
+      signoutBtn.style.display = 'inline-block';
+      emailEl.textContent = user.email;
+      emailEl.style.display = 'inline';
+    } else {
+      loggedOut.style.display = 'flex';
+      signoutBtn.style.display = 'none';
+      emailEl.style.display = 'none';
+    }
+  }
+  document.getElementById('auth-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeAuth();
+  });
+  document.getElementById('auth-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitAuth();
+  });
+
+  // ── COMPOSER ──────────────────────────────────────────
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.composer-tab').forEach((t, i) => {
+      t.classList.toggle('active',
+        (i === 0 && tab === 'tip') ||
+        (i === 1 && tab === 'recipe') ||
+        (i === 2 && tab === 'scan')
+      );
+    });
+    document.getElementById('tab-tip').style.display    = tab === 'tip'    ? 'block' : 'none';
+    document.getElementById('tab-recipe').style.display = tab === 'recipe' ? 'block' : 'none';
+    document.getElementById('tab-scan').style.display   = tab === 'scan'   ? 'block' : 'none';
+  }
+
+  async function submitPost() {
+    if (!currentUser) { openAuth('login'); return; }
+    const btn = document.getElementById('post-btn');
+    btn.disabled = true; btn.textContent = 'Posting…';
+    try {
+      if (currentTab === 'tip') {
+        const text = document.getElementById('tip-text').value.trim();
+        if (!text) { showToast('Write something first.', 'error'); return; }
+        const { error } = await sb.from('community_posts').insert({
+          user_id:   currentUser.id,
+          user_email: currentUser.email,
+          type:      'tip',
+          body:      text,
+        });
+        if (error) throw error;
+        document.getElementById('tip-text').value = '';
+      } else {
+        const title       = document.getElementById('rec-title').value.trim();
+        const serves      = document.getElementById('rec-serves').value.trim();
+        const ingredients = document.getElementById('rec-ingredients').value.trim();
+        const instructions = document.getElementById('rec-instructions').value.trim();
+        const cuisine     = document.getElementById('rec-cuisine').value.trim();
+        const notes       = document.getElementById('rec-notes').value.trim();
+        if (!title || !ingredients || !instructions) {
+          showToast('Please fill in recipe name, ingredients and instructions.', 'error');
+          return;
+        }
+        const { error } = await sb.from('community_posts').insert({
+          user_id:      currentUser.id,
+          user_email:   currentUser.email,
+          type:         'recipe',
+          recipe_title: title,
+          recipe_serves: serves,
+          recipe_ingredients: ingredients,
+          recipe_instructions: instructions,
+          recipe_cuisine: cuisine,
+          body:         notes,
+        });
+        if (error) throw error;
+        ['rec-title','rec-serves','rec-ingredients','rec-instructions','rec-cuisine','rec-notes'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+      }
+      showToast('Posted! ✓');
+    
+  // ── Community Scanner ──────────────────────────────────────────────────────
+  const SUPABASE_URL_SCAN = 'https://kbudeyikkcwypkpbbbjk.supabase.co';
+  let comScanFileData = null;
+  let comScanFileType = null;
+
+  function comHandleScanDrop(event) {
+    event.preventDefault();
+    const zone = document.getElementById('com-scan-upload-zone');
+    zone.style.borderColor = ''; zone.style.background = '';
+    const file = event.dataTransfer.files[0];
+    if (file) comHandleScanFile(file);
+  }
+
+  function comHandleScanFile(file) {
+    if (!file) return;
+    let mimeType = file.type;
+    if (!mimeType || !mimeType.startsWith('image/')) {
+      const ext = (file.name || '').split('.').pop().toLowerCase();
+      const extMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/jpeg' };
+      mimeType = extMap[ext] || 'image/jpeg';
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        const MAX = 800;
+        let w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+        comScanFileData = compressed.split(',')[1];
+        comScanFileType = 'image/jpeg';
+        document.getElementById('com-scan-preview-img').src = compressed;
+        document.getElementById('com-scan-preview-wrap').style.display = 'block';
+        document.getElementById('com-scan-upload-zone').style.display = 'none';
+        document.getElementById('com-scan-result').style.display = 'none';
+        document.getElementById('com-scan-parse-error').style.display = 'none';
+        comParseScannedRecipe();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function comClearScanFile() {
+    comScanFileData = null; comScanFileType = null;
+    document.getElementById('com-scan-preview-wrap').style.display = 'none';
+    document.getElementById('com-scan-upload-zone').style.display = 'block';
+    document.getElementById('com-scan-file-input').value = '';
+    document.getElementById('com-scan-result').style.display = 'none';
+    document.getElementById('com-scan-parse-error').style.display = 'none';
+    document.getElementById('com-scan-status').style.display = 'none';
+  }
+
+  async function comParseScannedRecipe() {
+    if (!comScanFileData) return;
+    document.getElementById('com-scan-status').style.display = 'block';
+    document.getElementById('com-scan-result').style.display = 'none';
+    document.getElementById('com-scan-parse-error').style.display = 'none';
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const response = await fetch(SUPABASE_URL_SCAN + '/functions/v1/scan-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ imageData: comScanFileData, mediaType: comScanFileType }),
+      });
+      const parsed = await response.json();
+      if (!response.ok || parsed.error) throw new Error(parsed.error || 'Scan failed');
+      document.getElementById('com-scan-title').value = parsed.title || '';
+      document.getElementById('com-scan-serves').value = parsed.serves || '';
+      document.getElementById('com-scan-cuisine').value = parsed.cuisine || '';
+      document.getElementById('com-scan-ingredients').value = parsed.ingredients || '';
+      document.getElementById('com-scan-instructions').value = parsed.instructions || '';
+      if (parsed.meal_type) document.getElementById('com-scan-meal-type').value = parsed.meal_type;
+      document.getElementById('com-scan-status').style.display = 'none';
+      document.getElementById('com-scan-result').style.display = 'block';
+    } catch (err) {
+      console.error('Scan error:', err);
+      document.getElementById('com-scan-status').style.display = 'none';
+      document.getElementById('com-scan-parse-error').style.display = 'block';
+    }
+  }
+
+  async function comPostScannedRecipe() {
+    const title = document.getElementById('com-scan-title').value.trim();
+    if (!title) { showToast('Please enter a recipe title.', 'error'); return; }
+    const ingredients = document.getElementById('com-scan-ingredients').value.trim();
+    const instructions = document.getElementById('com-scan-instructions').value.trim();
+    if (!ingredients || !instructions) { showToast('Ingredients and instructions are required.', 'error'); return; }
+    const mealType = document.getElementById('com-scan-meal-type').value;
+    const note = document.getElementById('com-scan-note').value.trim();
+    const { error } = await sb.from('community_posts').insert({
+      user_id:             currentUser.id,
+      user_email:          currentUser.email,
+      type:                'recipe',
+      body:                note,
+      recipe_title:        title,
+      recipe_serves:       document.getElementById('com-scan-serves').value.trim(),
+      recipe_cuisine:      document.getElementById('com-scan-cuisine').value.trim(),
+      recipe_ingredients:  ingredients,
+      recipe_instructions: instructions,
+    });
+    if (error) { showToast('Could not post. Try again.', 'error'); console.error(error); return; }
+    // Reset scan state
+    comClearScanFile();
+    ['com-scan-title','com-scan-serves','com-scan-cuisine','com-scan-ingredients','com-scan-instructions','com-scan-note'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    showToast('Recipe posted! ✓');
+    loadFeed();
+    switchTab('tip');
+  }
+
+  loadFeed();
+    } catch (err) {
+      console.error(err);
+      showToast('Could not post. Try again.', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Post';
+    }
+  }
+
+  // ── FEED ──────────────────────────────────────────────
+  async function loadFeed() {
+    const container = document.getElementById('feed-container');
+    const { data, error } = await sb
+      .from('community_posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error || !data || !data.length) {
+      container.innerHTML = `<div class="empty-feed">No posts yet — be the first to share something with the community.</div>`;
+      return;
+    }
+    posts = data;
+    container.innerHTML = `<div class="feed">${data.map(renderPost).join('')}</div>`;
+  }
+
+  function initials(email) {
+    if (!email) return '?';
+    return email.split('@')[0].slice(0, 2).toUpperCase();
+  }
+  function displayName(email) {
+    if (!email) return 'Anonymous';
+    return email.split('@')[0];
+  }
+  function timeAgo(iso) {
+    const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (diff < 60)  return 'just now';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  }
+
+  function renderPost(post) {
+    const isRecipe = post.type === 'recipe';
+    const likes    = post.likes || 0;
+    const comments = post.comments || [];
+    const commentCount = Array.isArray(comments) ? comments.length : 0;
+
+    const recipeSection = isRecipe ? `
+      <div class="post-recipe-title">${esc(post.recipe_title || '')}</div>
+      <div class="post-recipe-meta">
+        ${post.recipe_serves ? `<span>🍽 ${esc(post.recipe_serves)}</span>` : ''}
+        ${post.recipe_cuisine ? `<span>${esc(post.recipe_cuisine)}</span>` : ''}
+      </div>
+      ${post.recipe_ingredients ? `<div style="margin-bottom:0.6rem"><div style="font-family:'IM Fell English',serif;font-style:italic;font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.3rem">Ingredients</div><div style="font-size:0.82rem;line-height:1.8;font-family:'Libre Baskerville',serif;white-space:pre-wrap">${esc(post.recipe_ingredients)}</div></div>` : ''}
+      ${post.recipe_instructions ? `<div style="margin-bottom:0.6rem"><div style="font-family:'IM Fell English',serif;font-style:italic;font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.3rem">Instructions</div><div style="font-size:0.82rem;line-height:1.8;font-family:'Libre Baskerville',serif;white-space:pre-wrap">${esc(post.recipe_instructions)}</div></div>` : ''}
+    ` : '';
+
+    const commentItems = Array.isArray(comments) ? comments.map(c => `
+      <div class="comment">
+        <div class="comment-avatar">${initials(c.email)}</div>
+        <div class="comment-body">
+          <div class="comment-author">${esc(displayName(c.email))}</div>
+          <div class="comment-text">${esc(c.text)}</div>
+        </div>
+      </div>
+    `).join('') : '';
+
+    return `
+    <div class="post" id="post-${post.id}">
+      <div class="post-header">
+        <div class="post-avatar">${initials(post.user_email)}</div>
+        <div class="post-meta">
+          <div class="post-author">${esc(displayName(post.user_email))}</div>
+          <div class="post-time">${timeAgo(post.created_at)}</div>
+        </div>
+        <div class="post-type-badge ${isRecipe ? 'recipe' : ''}">${isRecipe ? 'Recipe' : 'Tip'}</div>
+      </div>
+      ${recipeSection}
+      ${post.body ? `<div class="post-body">${esc(post.body)}</div>` : ''}
+      <div class="post-actions">
+        <button class="post-action" onclick="toggleLike('${post.id}', ${likes})">♥ ${likes > 0 ? likes : ''} Like</button>
+        <button class="post-action" onclick="toggleComments('${post.id}')">💬 ${commentCount > 0 ? commentCount + ' ' : ''}Comment${commentCount !== 1 ? 's' : ''}</button>
+      </div>
+      <div class="comments-section" id="comments-${post.id}">
+        <div id="comments-list-${post.id}">${commentItems}</div>
+        <div class="comment-input-row">
+          <input class="comment-input" id="comment-input-${post.id}" placeholder="Add a comment…" onkeydown="if(event.key==='Enter') addComment('${post.id}')" />
+          <button class="btn-comment" onclick="addComment('${post.id}')">Post</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function esc(str) {
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  function toggleComments(postId) {
+    const el = document.getElementById('comments-' + postId);
+    el.classList.toggle('open');
+    if (el.classList.contains('open')) {
+      setTimeout(() => document.getElementById('comment-input-' + postId)?.focus(), 100);
+    }
+  }
+
+  async function toggleLike(postId, currentLikes) {
+    if (!currentUser) { openAuth('login'); return; }
+    const newLikes = currentLikes + 1;
+    await sb.from('community_posts').update({ likes: newLikes }).eq('id', postId);
+    const btn = document.querySelector(`#post-${postId} .post-action`);
+    if (btn) btn.textContent = `♥ ${newLikes} Like`;
+  }
+
+  async function addComment(postId) {
+    if (!currentUser) { openAuth('login'); return; }
+    const input = document.getElementById('comment-input-' + postId);
+    const text = input.value.trim();
+    if (!text) return;
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    const existingComments = Array.isArray(post.comments) ? post.comments : [];
+    const newComment = { email: currentUser.email, text, created_at: new Date().toISOString() };
+    const updatedComments = [...existingComments, newComment];
+    const { error } = await sb.from('community_posts').update({ comments: updatedComments }).eq('id', postId);
+    if (error) { showToast('Could not post comment.', 'error'); return; }
+    post.comments = updatedComments;
+    input.value = '';
+    const list = document.getElementById('comments-list-' + postId);
+    if (list) {
+      list.innerHTML += `
+        <div class="comment">
+          <div class="comment-avatar">${initials(currentUser.email)}</div>
+          <div class="comment-body">
+            <div class="comment-author">${esc(displayName(currentUser.email))}</div>
+            <div class="comment-text">${esc(text)}</div>
+          </div>
+        </div>`;
+    }
+  }
+
+
+  // ── Community Scanner ──────────────────────────────────────────────────────
+  const SUPABASE_URL_SCAN = 'https://kbudeyikkcwypkpbbbjk.supabase.co';
+  let comScanFileData = null;
+  let comScanFileType = null;
+
+  function comHandleScanDrop(event) {
+    event.preventDefault();
+    const zone = document.getElementById('com-scan-upload-zone');
+    zone.style.borderColor = ''; zone.style.background = '';
+    const file = event.dataTransfer.files[0];
+    if (file) comHandleScanFile(file);
+  }
+
+  function comHandleScanFile(file) {
+    if (!file) return;
+    let mimeType = file.type;
+    if (!mimeType || !mimeType.startsWith('image/')) {
+      const ext = (file.name || '').split('.').pop().toLowerCase();
+      const extMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/jpeg' };
+      mimeType = extMap[ext] || 'image/jpeg';
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        const MAX = 800;
+        let w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+        comScanFileData = compressed.split(',')[1];
+        comScanFileType = 'image/jpeg';
+        document.getElementById('com-scan-preview-img').src = compressed;
+        document.getElementById('com-scan-preview-wrap').style.display = 'block';
+        document.getElementById('com-scan-upload-zone').style.display = 'none';
+        document.getElementById('com-scan-result').style.display = 'none';
+        document.getElementById('com-scan-parse-error').style.display = 'none';
+        comParseScannedRecipe();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function comClearScanFile() {
+    comScanFileData = null; comScanFileType = null;
+    document.getElementById('com-scan-preview-wrap').style.display = 'none';
+    document.getElementById('com-scan-upload-zone').style.display = 'block';
+    document.getElementById('com-scan-file-input').value = '';
+    document.getElementById('com-scan-result').style.display = 'none';
+    document.getElementById('com-scan-parse-error').style.display = 'none';
+    document.getElementById('com-scan-status').style.display = 'none';
+  }
+
+  async function comParseScannedRecipe() {
+    if (!comScanFileData) return;
+    document.getElementById('com-scan-status').style.display = 'block';
+    document.getElementById('com-scan-result').style.display = 'none';
+    document.getElementById('com-scan-parse-error').style.display = 'none';
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const response = await fetch(SUPABASE_URL_SCAN + '/functions/v1/scan-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ imageData: comScanFileData, mediaType: comScanFileType }),
+      });
+      const parsed = await response.json();
+      if (!response.ok || parsed.error) throw new Error(parsed.error || 'Scan failed');
+      document.getElementById('com-scan-title').value = parsed.title || '';
+      document.getElementById('com-scan-serves').value = parsed.serves || '';
+      document.getElementById('com-scan-cuisine').value = parsed.cuisine || '';
+      document.getElementById('com-scan-ingredients').value = parsed.ingredients || '';
+      document.getElementById('com-scan-instructions').value = parsed.instructions || '';
+      if (parsed.meal_type) document.getElementById('com-scan-meal-type').value = parsed.meal_type;
+      document.getElementById('com-scan-status').style.display = 'none';
+      document.getElementById('com-scan-result').style.display = 'block';
+    } catch (err) {
+      console.error('Scan error:', err);
+      document.getElementById('com-scan-status').style.display = 'none';
+      document.getElementById('com-scan-parse-error').style.display = 'block';
+    }
+  }
+
+  async function comPostScannedRecipe() {
+    const title = document.getElementById('com-scan-title').value.trim();
+    if (!title) { showToast('Please enter a recipe title.', 'error'); return; }
+    const ingredients = document.getElementById('com-scan-ingredients').value.trim();
+    const instructions = document.getElementById('com-scan-instructions').value.trim();
+    if (!ingredients || !instructions) { showToast('Ingredients and instructions are required.', 'error'); return; }
+    const mealType = document.getElementById('com-scan-meal-type').value;
+    const note = document.getElementById('com-scan-note').value.trim();
+    const { error } = await sb.from('community_posts').insert({
+      user_id:             currentUser.id,
+      user_email:          currentUser.email,
+      type:                'recipe',
+      body:                note,
+      recipe_title:        title,
+      recipe_serves:       document.getElementById('com-scan-serves').value.trim(),
+      recipe_cuisine:      document.getElementById('com-scan-cuisine').value.trim(),
+      recipe_ingredients:  ingredients,
+      recipe_instructions: instructions,
+    });
+    if (error) { showToast('Could not post. Try again.', 'error'); console.error(error); return; }
+    // Reset scan state
+    comClearScanFile();
+    ['com-scan-title','com-scan-serves','com-scan-cuisine','com-scan-ingredients','com-scan-instructions','com-scan-note'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    showToast('Recipe posted! ✓');
+    loadFeed();
+    switchTab('tip');
+  }
+
+  loadFeed();
+</script>
+</body>
+</html>
