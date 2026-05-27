@@ -407,6 +407,8 @@
   .modal-toggle a:hover { color: var(--gold-bright); }
   .modal-error { background: var(--bg2); border: 1px solid var(--border); padding: 0.6rem 0.8rem; font-size: 0.82rem; font-style: italic; color: var(--ink); margin-top: 0.75rem; display: none; font-family: 'Libre Baskerville', serif; }
   .modal-error.show { display: block; }
+  .modal-info { background: #f0f5ee; border: 1px solid #b8ceaf; padding: 0.75rem 0.9rem; font-size: 0.88rem; font-style: italic; color: #2d4a27; margin-top: 0.75rem; display: none; font-family: 'Libre Baskerville', serif; line-height: 1.6; }
+  .modal-info.show { display: block; }
   .modal-close { float: right; background: none; border: none; font-size: 1.2rem; color: var(--text-muted); cursor: pointer; margin-top: -0.25rem; font-family: serif; }
   .modal-close:hover { color: var(--ink); }
 
@@ -553,6 +555,7 @@
       <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" />
     </div>
     <div class="modal-error" id="auth-error"></div>
+    <div class="modal-info" id="auth-info"></div>
     <div class="modal-actions">
       <button class="btn-modal-primary" id="auth-submit-btn" onclick="submitAuth()">Sign In</button>
     </div>
@@ -1519,8 +1522,12 @@
   function closeAuth() {
     document.getElementById('auth-modal').classList.remove('open');
     document.getElementById('auth-error').classList.remove('show');
+    document.getElementById('auth-info').classList.remove('show');
     document.getElementById('auth-email').value = '';
     document.getElementById('auth-password').value = '';
+    document.getElementById('auth-email').closest('.modal-field').style.display = '';
+    document.getElementById('auth-password').closest('.modal-field').style.display = '';
+    document.querySelector('.modal-toggle').style.display = '';
   }
   function toggleAuthMode() {
     authMode = authMode === 'login' ? 'signup' : 'login';
@@ -1534,6 +1541,7 @@
     document.getElementById('modal-toggle-text').textContent = isLogin ? "Don't have an account?" : 'Already have an account?';
     document.getElementById('modal-toggle-link').textContent = isLogin ? 'Sign Up' : 'Sign In';
     document.getElementById('auth-error').classList.remove('show');
+    document.getElementById('auth-info').classList.remove('show');
   }
 
   async function submitAuth() {
@@ -1551,8 +1559,16 @@
         result = await sb.auth.signUp({ email, password });
         if (result.error) throw result.error;
         if (result.data.user && !result.data.session) {
-          showAuthError('Check your email to confirm your account, then sign in.');
-          btn.disabled = false; updateAuthModal(); return;
+          // Email confirmation required — show friendly info state
+          document.getElementById('auth-error').classList.remove('show');
+          document.getElementById('auth-info').textContent = '✉️ Check your inbox — we sent a confirmation link to ' + email + '. Click it to activate your account, then come back here to sign in.';
+          document.getElementById('auth-info').classList.add('show');
+          btn.textContent = 'Email sent!';
+          btn.disabled = true;
+          document.getElementById('auth-email').closest('.modal-field').style.display = 'none';
+          document.getElementById('auth-password').closest('.modal-field').style.display = 'none';
+          document.querySelector('.modal-toggle').style.display = 'none';
+          return;
         }
       } else {
         result = await sb.auth.signInWithPassword({ email, password });
