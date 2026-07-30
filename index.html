@@ -533,6 +533,10 @@
     <button class="btn-auth ghost" onclick="togglePanel('lists-panel')">🛒 My Lists</button>
     <button class="btn-auth ghost" onclick="togglePanel('my-recipes-panel')">🍴 My Recipes</button>
     <button class="btn-auth primary" onclick="openScanRecipe()" id="scan-recipe-btn" style="background:#5c2600;border-color:#3b1800">📷 Scan Recipe</button>
+    <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);background:var(--bg)">
+      <input type="url" id="url-scan-input" placeholder="Paste a recipe URL…" style="border:none;background:transparent;padding:0.5rem 0.7rem;font-family:'Libre Baskerville',serif;font-size:0.85rem;color:#3b2409;outline:none;width:200px" onkeydown="if(event.key==='Enter'){event.preventDefault();openUrlScan();}">
+      <button onclick="openUrlScan()" id="url-scan-btn" title="Add recipe from URL" style="border:none;background:none;cursor:pointer;padding:0.5rem 0.7rem;font-size:1rem;color:#5c2600">🔍</button>
+    </div>
   </div>
   <!-- Logged-out add to list (single row) -->
   <div id="auth-logged-out-list" class="auth-bar-row2">
@@ -975,7 +979,7 @@
   <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto">
     <button class="modal-close" onclick="closeScanRecipe()">×</button>
     <h2 id="scan-modal-title">Scan a Recipe</h2>
-    <p class="modal-sub">Photograph or upload a recipe card, handwritten note, or cookbook page — we will read it and add it to your collection.</p>
+    <p class="modal-sub" id="scan-modal-sub">Photograph or upload a recipe card, handwritten note, or cookbook page — we will read it and add it to your collection.</p>
 
     <div id="scan-upload-zone" style="border:2px dashed var(--border);background:var(--bg);padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;margin-bottom:1.25rem;position:relative"
       ondragover="event.preventDefault();this.style.borderColor='var(--gold)';this.style.background='#fdf0e0'"
@@ -2479,6 +2483,7 @@
 
   let scanFileData = null;
   let scanFileType = null;
+  let scanSourceUrl = null;
 
   const FREE_SCAN_LIMIT = 2;
 
@@ -2498,7 +2503,42 @@
       return;
     }
     resetScanModal();
+    document.getElementById('scan-modal-title').textContent = 'Scan a Recipe';
+    document.getElementById('scan-modal-sub').textContent = 'Photograph or upload a recipe card, handwritten note, or cookbook page — we will read it and add it to your collection.';
+    document.getElementById('scan-upload-zone').style.display = 'block';
     document.getElementById('scan-recipe-modal').classList.add('open');
+  }
+
+  async function openUrlScan() {
+    if (!currentUser) { openAuth('login'); return; }
+
+    const input = document.getElementById('url-scan-input');
+    const url = input.value.trim();
+    if (!url) { showToast('Paste a recipe URL first.', 'error'); return; }
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+      if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error('bad protocol');
+    } catch {
+      showToast('That doesn\'t look like a valid URL.', 'error');
+      return;
+    }
+
+    const count = await getScanCount();
+    if (count >= FREE_SCAN_LIMIT) {
+      showScanLimitModal(count);
+      return;
+    }
+
+    resetScanModal();
+    document.getElementById('scan-modal-title').textContent = 'Add Recipe from URL';
+    document.getElementById('scan-modal-sub').textContent = 'We\'ll read the recipe at that link and add it to your collection.';
+    document.getElementById('scan-upload-zone').style.display = 'none';
+    document.getElementById('scan-recipe-modal').classList.add('open');
+    input.value = '';
+
+    scanSourceUrl = parsedUrl.toString();
+    parseScannedRecipeFromUrl(scanSourceUrl);
   }
 
   function showScanLimitModal(count) {
@@ -2582,6 +2622,7 @@
 
   function resetScanModal() {
     clearScanFile();
+    scanSourceUrl = null;
     document.getElementById('scan-title').value = '';
     document.getElementById('scan-serves').value = '';
     document.getElementById('scan-cuisine').value = '';
@@ -2671,6 +2712,88 @@
     }
   }
 
+  async function parseScannedRecipeFromUrl(url) {
+    if (!url) return;
+    document.getElementById('scan-status').style.display = 'block';
+    document.getElementById('scan-result').style.display = 'none';
+    document.getElementById('scan-parse-error').style.display = 'none';
+
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const response = await fetch(SUPABASE_URL + '/functions/v1/scan-recipe-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token,
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      const parsed = await response.json();
+
+      if (!response.ok) {
+        const msg = parsed.error || ('Error ' + response.status);
+        if (parsed.error === 'scan_limit_reached') {
+          document.getElementById('scan-status').style.display = 'none';
+          closeScanRecipe();
+          showScanLimitModal(parsed.count);
+          return;
+        }
+        if (parsed.error === 'service_unavailable') {
+          document.getElementById('scan-status').style.display = 'none';
+          document.getElementById('scan-parse-error').innerHTML =
+            'Reading recipes from links is temporarily unavailable. Please enter your recipe manually.' +
+            '<div style="margin-top:0.75rem"><button onclick="resetScanModal()" class="btn-modal-primary" style="width:auto;padding:0.45rem 1.1rem;font-size:0.82rem">OK</button></div>';
+          document.getElementById('scan-parse-error').style.display = 'block';
+          return;
+        }
+        if (parsed.error === 'rate_limited' || response.status === 429) {
+          document.getElementById('scan-status').style.display = 'none';
+          document.getElementById('scan-parse-error').innerHTML =
+            'Too many scans at once — please wait a moment and try again.' +
+            '<div style="margin-top:0.75rem"><button onclick="resetScanModal()" class="btn-modal-primary" style="width:auto;padding:0.45rem 1.1rem;font-size:0.82rem">OK</button></div>';
+          document.getElementById('scan-parse-error').style.display = 'block';
+          return;
+        }
+        throw new Error(msg);
+      }
+
+      if (parsed.error) {
+        document.getElementById('scan-status').style.display = 'none';
+        document.getElementById('scan-parse-error').innerHTML =
+          'Could not find a recipe at that link. Please check the URL or enter it manually.' +
+          '<div style="margin-top:0.75rem"><button onclick="resetScanModal()" class="btn-modal-primary" style="width:auto;padding:0.45rem 1.1rem;font-size:0.82rem">Try again</button></div>';
+        document.getElementById('scan-parse-error').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('scan-title').value = parsed.title || '';
+      document.getElementById('scan-serves').value = parsed.serves || '';
+      document.getElementById('scan-cuisine').value = parsed.cuisine || '';
+      document.getElementById('scan-ingredients').value = parsed.ingredients || '';
+      document.getElementById('scan-instructions').value = parsed.instructions || '';
+      if (parsed.meal_type) document.getElementById('scan-meal-type').value = parsed.meal_type;
+
+      document.getElementById('scan-status').style.display = 'none';
+      document.getElementById('scan-result').style.display = 'block';
+
+      if (parsed.scans_remaining !== undefined) {
+        const btn = document.getElementById('scan-recipe-btn');
+        if (btn) btn.textContent = parsed.scans_remaining > 0
+          ? `📷 Scan Recipe (${parsed.scans_remaining} left)`
+          : '📷 Scan Recipe (limit reached)';
+      }
+
+    } catch (err) {
+      console.error('URL scan error:', err);
+      document.getElementById('scan-status').style.display = 'none';
+      const errEl = document.getElementById('scan-parse-error');
+      errEl.innerHTML = (err.message || 'Could not read the recipe from that link.') +
+        '<div style="margin-top:0.75rem"><button onclick="resetScanModal()" class="btn-modal-primary" style="width:auto;padding:0.45rem 1.1rem;font-size:0.82rem">Try again</button></div>';
+      errEl.style.display = 'block';
+    }
+  }
+
   async function saveScanRecipe() {
     const title = document.getElementById('scan-title').value.trim();
     const errEl = document.getElementById('scan-save-error');
@@ -2703,7 +2826,7 @@
       instructions: document.getElementById('scan-instructions').value.trim(),
       dish_types: mealType,
       meal_type: mealType,
-      source_url: 'classic',
+      source_url: scanSourceUrl || 'classic',
       added_by: currentUser.id,
       scanned: true,
       community_sub: 'y',
