@@ -840,20 +840,6 @@
       </div>
 
       <div class="field-group">
-        <label class="field-label">Recipe sources</label>
-        <div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.9rem 1rem;background:var(--bg);border:1px solid var(--border);cursor:pointer" onclick="toggleCommunity(this)">
-          <div id="community-checkbox" style="width:18px;height:18px;border:1.5px solid var(--border);background:var(--cream);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;font-size:12px"></div>
-          <div>
-            <div style="display:flex;align-items:center;gap:0.4rem;font-family:'Libre Baskerville',serif;font-size:0.88rem;color:var(--ink);margin-bottom:0.2rem">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;opacity:0.75"><path d="M7 1.5L1.5 6v6h3.5V9h4v3H12.5V6L7 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
-              Include community submissions
-            </div>
-            <div style="font-family:'Libre Baskerville',serif;font-size:0.8rem;font-style:italic;color:var(--text-muted);line-height:1.5">When checked, recipes scanned and submitted by other users may appear in your plan. Uncheck to use only our curated recipe library.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="field-group">
         <label class="field-label">Disliked ingredients <span style="font-style:italic;text-transform:none;letter-spacing:0;font-family:'Libre Baskerville',serif;font-size:0.9rem">(we'll avoid these)</span></label>
         <input type="text" class="text-input" id="dislikes-input" placeholder="e.g. cilantro, mushrooms, olives…" />
       </div>
@@ -1260,6 +1246,7 @@
   }
 
   const shownIds = new Set();
+  const shownTitles = new Set();
   const typeIcons = { 'main course': '🍽', 'breakfast': '🥞', 'snack': '🫐', 'dessert': '🍮', 'side dish': '🥦', 'salad': '🥗' };
 
   const dietColMap = {
@@ -1279,11 +1266,13 @@
 
   const dishTypesCategories = new Set(['main course', 'side dish', 'salad', 'dessert', 'snack']);
 
-  // Build a base query with all user filters except kid_friendly
-  function buildBaseQuery(mealType, limitMultiplier) {
+  // Build a recipe_box query with all user filters except kid_friendly.
+  // This now includes both the originally curated set AND recipes Claude
+  // has generated and archived on previous searches.
+  function buildDbQuery(mealType, limit) {
     let query = sb.from('recipe_box')
-      .select('id, title, source_url, serving_size, cuisines, dish_types, meal_type, vegetarian, vegan, gluten_free, dairy_free, diets, ingredients, kid_friendly, scanned')
-      .limit(Math.ceil(limitMultiplier * 8));
+      .select('id, title, source_url, serving_size, cuisines, dish_types, meal_type, vegetarian, vegan, gluten_free, dairy_free, diets, ingredients, instructions, kid_friendly, scanned, ai_generated')
+      .limit(limit);
 
     if (dishTypesCategories.has(mealType)) {
       query = query.ilike('dish_types', `%${mealType}%`);
@@ -1296,81 +1285,107 @@
       if (col) query = query.eq(col, true);
     }
 
-    if (!state.includeCommunity) {
-      query = query.or('scanned.is.null,scanned.eq.false');
-    }
-
     return query;
   }
 
   function applyClientFilters(results) {
+    let out = results;
     if (state.cuisines.length > 0) {
       const wantedCuisines = state.cuisines.map(c => cuisineMap[c]).filter(Boolean).map(c => c.toLowerCase());
       if (wantedCuisines.length > 0) {
-        results = results.filter(r => {
+        out = out.filter(r => {
           const cuisineText = (r.cuisines || '').toLowerCase();
           return wantedCuisines.some(wc => cuisineText.includes(wc));
         });
       }
     }
-    if (state.dislikes.trim()) {
+    if (state.dislikes && state.dislikes.trim()) {
       const dislikes = state.dislikes.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
-      results = results.filter(r => {
+      out = out.filter(r => {
         const ingText = (r.ingredients || '').toLowerCase();
         return !dislikes.some(d => ingText.includes(d));
       });
     }
-    return results.filter(r => !shownIds.has(r.id));
+    return out.filter(r => !shownIds.has(r.id) && !shownTitles.has(r.title));
+  }
+
+  // Try the database first (curated + previously-archived AI recipes).
+  async function fetchFromDb(mealType, count, kidFriendlyOnly) {
+    if (count <= 0) return [];
+    let query = buildDbQuery(mealType, count * 4); // overfetch so client-side filters still leave enough
+    if (kidFriendlyOnly) query = query.eq('kid_friendly', true);
+    const { data, error } = await query;
+    if (error) { console.error('recipe_box query failed:', error); return []; }
+    return applyClientFilters(data || []).sort(() => Math.random() - 0.5).slice(0, count);
+  }
+
+  // Ask Claude (via the generate-recipes edge function) to invent recipes
+  // for whatever the database couldn't cover. The edge function archives
+  // non-duplicate results back into recipe_box for next time.
+  async function generateRecipes(mealType, count, kidFriendlyCount) {
+    if (count <= 0) return [];
+    const kids   = state.kids   || 0;
+    const adults = state.adults || 1;
+
+    const dislikes = state.dislikes && state.dislikes.trim()
+      ? state.dislikes.split(',').map(d => d.trim()).filter(Boolean)
+      : [];
+
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-recipes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': `Bearer ${SUPABASE_ANON}`,
+      },
+      body: JSON.stringify({
+        mealType,
+        count,
+        kidFriendlyCount,
+        restrictions: state.restrictions,
+        cuisines: state.cuisines,
+        dislikes,
+        excludeTitles: Array.from(shownTitles),
+        household: { adults, kids },
+      }),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`Recipe generation failed (${resp.status}): ${errBody}`);
+    }
+
+    const { recipes } = await resp.json();
+    return (recipes || []).filter(r => !shownIds.has(r.id) && !shownTitles.has(r.title));
   }
 
   async function fetchRecipesForType(mealType, count) {
     const kids   = state.kids   || 0;
     const adults = state.adults || 1;
     const total  = kids + adults;
+    const kidRatio = total > 0 ? kids / total : 0;
+    const kidCount    = Math.round(count * kidRatio);
+    const nonKidCount = count - kidCount;
 
-    // How many of the returned recipes should be kid-friendly
-    const kidRatio     = kids / total;
-    const kidCount     = Math.round(count * kidRatio);
-    const nonKidCount  = count - kidCount;
+    // 1. Pull what we can from the database.
+    const [kidFromDb, nonKidFromDb] = await Promise.all([
+      fetchFromDb(mealType, kidCount, true),
+      fetchFromDb(mealType, nonKidCount, false),
+    ]);
+    [...kidFromDb, ...nonKidFromDb].forEach(r => { shownIds.add(r.id); shownTitles.add(r.title); });
 
-    let kidResults = [];
-    let nonKidResults = [];
+    // 2. Whatever's left, ask Claude to generate (and archive for next time).
+    const kidShortfall    = kidCount - kidFromDb.length;
+    const nonKidShortfall = nonKidCount - nonKidFromDb.length;
+    const totalShortfall  = kidShortfall + nonKidShortfall;
 
-    // Fetch kid-friendly recipes if any kids in household
-    if (kidCount > 0) {
-      const { data: kidData } = await buildBaseQuery(mealType, kidCount).eq('kid_friendly', true);
-      kidResults = applyClientFilters(kidData || []).sort(() => Math.random() - 0.5);
+    let generated = [];
+    if (totalShortfall > 0) {
+      generated = await generateRecipes(mealType, totalShortfall, kidShortfall);
+      generated.forEach(r => { shownIds.add(r.id); shownTitles.add(r.title); });
     }
 
-    // Fetch non-kid-friendly (or unrated) recipes for the adult portion
-    if (nonKidCount > 0) {
-      const { data: nonKidData } = await buildBaseQuery(mealType, nonKidCount);
-      // Exclude recipes already picked as kid-friendly
-      const kidIds = new Set(kidResults.map(r => r.id));
-      nonKidResults = applyClientFilters(nonKidData || [])
-        .filter(r => !kidIds.has(r.id))
-        .sort(() => Math.random() - 0.5);
-    }
-
-    // If kid-friendly quota couldn't be filled, fall back to any recipe
-    const kidShortfall = kidCount - kidResults.length;
-    if (kidShortfall > 0) {
-      const filledIds = new Set([...kidResults, ...nonKidResults].map(r => r.id));
-      const { data: fallbackData } = await buildBaseQuery(mealType, kidShortfall);
-      const fallback = applyClientFilters(fallbackData || [])
-        .filter(r => !filledIds.has(r.id))
-        .sort(() => Math.random() - 0.5)
-        .slice(0, kidShortfall);
-      nonKidResults = [...nonKidResults, ...fallback];
-    }
-
-    // Take exactly the right number from each bucket
-    const picked = [
-      ...kidResults.slice(0, kidCount),
-      ...nonKidResults.slice(0, count - Math.min(kidCount, kidResults.length)),
-    ].slice(0, count);
-
-    return picked;
+    return [...kidFromDb, ...nonKidFromDb, ...generated];
   }
 
   function renderCard(r, index, mealType) {
@@ -1406,7 +1421,7 @@
     btn.classList.add('spinning');
     try {
       shownIds.delete(oldId);
-      const candidates = await fetchRecipesForType(mealType, 5);
+      const candidates = await fetchRecipesForType(mealType, 1);
       if (!candidates.length) {
         shownIds.add(oldId);
         card.classList.remove('swapping');
@@ -1416,6 +1431,7 @@
       }
       const newRecipe = candidates[0];
       shownIds.add(newRecipe.id);
+      shownTitles.add(newRecipe.title);
       const tmp = document.createElement('div');
       tmp.innerHTML = renderCard(newRecipe, index, mealType);
       const newCard = tmp.firstElementChild;
@@ -1439,6 +1455,7 @@
     }, 100);
 
     shownIds.clear();
+    shownTitles.clear();
 
     const grid = document.getElementById('results-grid');
     const title = document.getElementById('results-title');
@@ -1461,7 +1478,7 @@
       const groups = await Promise.all(
         activeTypes.map(async ([type, count]) => {
           const results = await fetchRecipesForType(type, count);
-          results.forEach(r => shownIds.add(r.id));
+          results.forEach(r => { shownIds.add(r.id); shownTitles.add(r.title); });
           return { type, results };
         })
       );
@@ -1733,13 +1750,9 @@
     const activePlanRecipes = getCurrentPlanRecipes();
     if (activePlanRecipes.length === 0) { showToast('Generate a plan first.', 'error'); return; }
 
-    const ids = activePlanRecipes.map(r => r.id);
-    const { data: fullRecipes, error: fetchErr } = await sb
-      .from('recipe_box')
-      .select('id, title, source_url, ingredients')
-      .in('id', ids);
-
-    if (fetchErr) { showToast('Could not load ingredients.', 'error'); return; }
+    // Recipe cards already carry full data (title, ingredients, source_url) —
+    // no need to look them up again, since generated recipes aren't stored in the database.
+    const fullRecipes = activePlanRecipes.map(r => ({ id: r.id, title: r.title, source_url: r.source_url, ingredients: r.ingredients }));
 
     function classifyAisle(ingredient) {
       const s = ingredient.toLowerCase();
@@ -2127,13 +2140,14 @@
 
   async function openRecipeCard(btn) {
     const card = btn.closest('.recipe-card');
-    const recipeId = card ? card.dataset.recipeId : null;
-    if (!recipeId) { showToast('Could not load recipe.', 'error'); return; }
-    const { data, error } = await sb.from('recipe_box')
-      .select('title, serving_size, ingredients, instructions, scanned')
-      .eq('id', recipeId)
-      .single();
-    if (error || !data) { showToast('Could not load recipe.', 'error'); return; }
+    if (!card || !card.dataset.recipeJson) { showToast('Could not load recipe.', 'error'); return; }
+    let data;
+    try {
+      data = JSON.parse(decodeURIComponent(card.dataset.recipeJson));
+    } catch {
+      showToast('Could not load recipe.', 'error');
+      return;
+    }
     _renderRecipeCard(data);
   }
 
